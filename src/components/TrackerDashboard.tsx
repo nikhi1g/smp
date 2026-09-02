@@ -19,7 +19,9 @@ import {
   Trash2,
   UsersRound,
   X,
+  HelpCircle,
 } from "lucide-react";
+import { OpenRouterLogo } from "@/components/OpenRouterLogo";
 import {
   appendActionLog,
   deleteApplication,
@@ -261,7 +263,7 @@ function ApplicationEditor({
 
   const [isAutofilling, setIsAutofilling] = useState(false);
   const [autofillError, setAutofillError] = useState<string | null>(null);
-
+  const [showOpenRouterInfo, setShowOpenRouterInfo] = useState(false);
   const handleAutofill = async () => {
     const query = `${formState.university} ${formState.programName} ${formState.degreeType}`.trim();
     if (!query) {
@@ -479,17 +481,49 @@ function ApplicationEditor({
             </div>
           )}
 
-          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d8dee4] pt-4 dark:border-[#444c56]">
-            <button
-              type="button"
-              onClick={handleAutofill}
-              disabled={isAutofilling}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[#0969da]/30 bg-[#ddf4ff] px-3 py-2 text-xs font-semibold text-[#0969da] transition hover:bg-[#b6e3ff] focus:outline-none focus:ring-2 focus:ring-[#0969da] disabled:opacity-50 dark:border-[#539bf5]/40 dark:bg-[#1f3b53] dark:text-[#539bf5] dark:hover:bg-[#294c6b]"
-              title="Autofill program details using OpenRouter"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {isAutofilling ? "Autofilling details..." : "⚡ Autofill with OpenRouter"}
-            </button>
+          <footer className="relative flex flex-wrap items-center justify-between gap-3 border-t border-[#d8dee4] pt-4 dark:border-[#444c56]">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleAutofill}
+                disabled={isAutofilling}
+                className="inline-flex items-center gap-2 rounded-md border border-[#0969da]/30 bg-[#ddf4ff] px-3 py-2 text-xs font-semibold text-[#0969da] transition hover:bg-[#b6e3ff] focus:outline-none focus:ring-2 focus:ring-[#0969da] disabled:opacity-50 dark:border-[#539bf5]/40 dark:bg-[#1f3b53] dark:text-[#539bf5] dark:hover:bg-[#294c6b]"
+                title="Autofill program details"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>{isAutofilling ? "Autofilling..." : "Autofill"}</span>
+                <OpenRouterLogo className="h-3.5 w-3.5 opacity-80" />
+              </button>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowOpenRouterInfo(!showOpenRouterInfo)}
+                  aria-label="What is OpenRouter?"
+                  className="rounded-full p-1 text-[#57606a] hover:bg-[#f6f8fa] hover:text-[#24292f] dark:text-[#768390] dark:hover:bg-[#2d333b] dark:hover:text-[#adbac7] transition focus:outline-none"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </button>
+
+                {showOpenRouterInfo && (
+                  <div className="absolute bottom-full left-0 mb-2 w-72 rounded-lg border border-[#d0d7de] bg-white p-3 text-xs text-[#24292f] shadow-xl dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#adbac7] z-50">
+                    <div className="flex items-center justify-between font-semibold border-b border-[#d8dee4] dark:border-[#444c56] pb-1.5 mb-1.5">
+                      <span>OpenRouter Inference</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowOpenRouterInfo(false)}
+                        className="text-[#57606a] dark:text-[#768390] hover:text-[#24292f] dark:hover:text-[#adbac7]"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <p className="leading-relaxed text-[#57606a] dark:text-[#768390]">
+                      OpenRouter routes structured JSON queries to high-intelligence models (e.g. DeepSeek V4 Flash) to verify admissions requirements, GPA/MCAT cutoffs, and deadlines for your target program.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="flex items-center gap-2">
               <button type="button" onClick={onCancel} className="rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-semibold text-[#24292f] transition hover:bg-[#f6f8fa] focus:outline-none focus:ring-2 focus:ring-[#0969da] dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#adbac7] dark:hover:bg-[#373e47]">Cancel</button>
@@ -777,7 +811,7 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
               type="button"
               onClick={() => setIsSettingsOpen(true)}
               className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-semibold text-[#57606a] transition hover:bg-[#f6f8fa] hover:text-[#24292f] focus:outline-none focus:ring-2 focus:ring-[#0969da] dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7] dark:hover:bg-[#2d333b]"
-              title="Configure Muse Spark API key"
+              title="Configure OpenRouter API key"
             >
               <Key className="h-4 w-4" />
               API Key
