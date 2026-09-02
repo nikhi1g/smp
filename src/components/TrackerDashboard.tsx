@@ -480,16 +480,15 @@ function ApplicationEditor({
           )}
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d8dee4] pt-4 dark:border-[#444c56]">
-            {/* Clean Autocomplete / Autofill button */}
             <button
               type="button"
               onClick={handleAutofill}
               disabled={isAutofilling}
               className="inline-flex items-center gap-1.5 rounded-md border border-[#0969da]/30 bg-[#ddf4ff] px-3 py-2 text-xs font-semibold text-[#0969da] transition hover:bg-[#b6e3ff] focus:outline-none focus:ring-2 focus:ring-[#0969da] disabled:opacity-50 dark:border-[#539bf5]/40 dark:bg-[#1f3b53] dark:text-[#539bf5] dark:hover:bg-[#294c6b]"
-              title="Autofill program details using Muse Spark"
+              title="Autofill program details using OpenRouter"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              {isAutofilling ? "Autofilling details..." : "⚡ Autofill with Muse Spark"}
+              {isAutofilling ? "Autofilling details..." : "⚡ Autofill with OpenRouter"}
             </button>
 
             <div className="flex items-center gap-2">

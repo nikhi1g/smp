@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Key, X, Check, Eye, EyeOff } from "lucide-react";
+import { DEFAULT_MODEL } from "@/lib/autofill";
 
 interface Props {
   isOpen: boolean;
@@ -10,25 +11,22 @@ interface Props {
 
 export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("https://api.aimlapi.com/v1");
-  const [model, setModel] = useState("meta/muse-spark-1.2");
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setApiKey(localStorage.getItem("smp_muse_spark_api_key") || "");
-      setBaseUrl(localStorage.getItem("smp_muse_spark_base_url") || "https://api.aimlapi.com/v1");
-      setModel(localStorage.getItem("smp_muse_spark_model") || "meta/muse-spark-1.2");
+      setApiKey(localStorage.getItem("smp_openrouter_api_key") || "");
+      setModel(localStorage.getItem("smp_openrouter_model") || DEFAULT_MODEL);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleSave = () => {
-    localStorage.setItem("smp_muse_spark_api_key", apiKey.trim());
-    localStorage.setItem("smp_muse_spark_base_url", baseUrl.trim());
-    localStorage.setItem("smp_muse_spark_model", model.trim());
+    localStorage.setItem("smp_openrouter_api_key", apiKey.trim());
+    localStorage.setItem("smp_openrouter_model", model.trim());
     setSaved(true);
     setTimeout(() => {
       setSaved(false);
@@ -37,7 +35,7 @@ export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
   };
 
   const handleClear = () => {
-    localStorage.removeItem("smp_muse_spark_api_key");
+    localStorage.removeItem("smp_openrouter_api_key");
     setApiKey("");
     setSaved(true);
     setTimeout(() => setSaved(false), 800);
@@ -49,7 +47,7 @@ export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
         <div className="flex items-center justify-between border-b border-[var(--border)] pb-3 mb-4">
           <div className="flex items-center gap-2">
             <Key className="w-5 h-5 text-[var(--acc)]" />
-            <h3 className="font-bold text-lg">Muse Spark API Settings</h3>
+            <h3 className="font-bold text-lg">OpenRouter API Settings</h3>
           </div>
           <button
             onClick={onClose}
@@ -60,20 +58,20 @@ export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
         </div>
 
         <p className="text-xs text-[var(--sub)] mb-4 leading-relaxed">
-          Your API key is securely stored only in your local browser storage (`localStorage`) and is never sent to any server except direct HTTPS requests to the LLM endpoint for autofill.
+          Your OpenRouter API token is stored securely in your browser&apos;s local storage (`localStorage`) and sent via HTTPS directly to `openrouter.ai/api/v1` for structured schema autofill.
         </p>
 
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[var(--sub)] mb-1 uppercase tracking-wider">
-              API Token
+              OpenRouter API Key
             </label>
             <div className="relative flex items-center">
               <input
                 type={showKey ? "text" : "password"}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter API token..."
+                placeholder="sk-or-v1-..."
                 className="w-full px-3 py-2 pr-10 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg)] focus:outline-none focus:border-[var(--acc)]"
               />
               <button
@@ -88,28 +86,18 @@ export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
 
           <div>
             <label className="block text-xs font-semibold text-[var(--sub)] mb-1 uppercase tracking-wider">
-              Base URL
-            </label>
-            <input
-              type="text"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.aimlapi.com/v1"
-              className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg)] focus:outline-none focus:border-[var(--acc)]"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-[var(--sub)] mb-1 uppercase tracking-wider">
               Model
             </label>
             <input
               type="text"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder="meta/muse-spark-1.2"
+              placeholder={DEFAULT_MODEL}
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg)] focus:outline-none focus:border-[var(--acc)]"
             />
+            <p className="text-[11px] text-[var(--sub)] mt-1">
+              Supports `meta-llama/llama-3.3-70b-instruct`, `anthropic/claude-3.5-sonnet`, `openai/gpt-4o-mini`, etc.
+            </p>
           </div>
         </div>
 

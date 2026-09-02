@@ -10,77 +10,135 @@ export interface AutofillResult {
   notes?: string;
 }
 
+export class AutofillError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = "AutofillError";
+  }
+}
+
+export const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+export const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct";
+
+function programSchema() {
+  return {
+    type: "object",
+    properties: {
+      programName: {
+        type: "string",
+        description: "Official full program title (e.g. Special Master's Program in Physiology)",
+      },
+      university: {
+        type: "string",
+        description: "Official university name (e.g. Georgetown University)",
+      },
+      degreeType: {
+        type: "string",
+        description: "Degree award type (e.g. M.S. Physiology, M.A. Medical Sciences, Post-Bacc Certificate)",
+      },
+      deadline: {
+        type: "string",
+        description: "Application deadline in YYYY-MM-DD format (e.g. 2026-05-15)",
+      },
+      gpaRequirement: {
+        type: "string",
+        description: "Minimum or recommended undergraduate GPA cutoff (e.g. 3.0+)",
+      },
+      mcatRequirement: {
+        type: "string",
+        description: "Minimum or recommended MCAT score cutoff (e.g. 500+ or Optional)",
+      },
+      appFee: {
+        type: "string",
+        description: "Application fee (e.g. $80)",
+      },
+      portalUrl: {
+        type: "string",
+        description: "Canonical link to official program or application portal",
+      },
+      notes: {
+        type: "string",
+        description: "Concise summary of medical school linkage, curriculum, and timeline highlights.",
+      },
+    },
+    required: ["programName", "university", "degreeType", "deadline", "gpaRequirement", "mcatRequirement", "appFee", "portalUrl", "notes"],
+    additionalProperties: false,
+  };
+}
+
 export async function requestProgramAutofill(query: string, customApiKey?: string): Promise<AutofillResult> {
   const apiKey =
     customApiKey ||
-    (typeof window !== "undefined" ? localStorage.getItem("smp_muse_spark_api_key") : null) ||
-    process.env.NEXT_PUBLIC_MUSE_SPARK_API_KEY ||
+    (typeof window !== "undefined" ? localStorage.getItem("smp_openrouter_api_key") : null) ||
+    process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ||
     "";
 
-  const baseUrl =
-    (typeof window !== "undefined" ? localStorage.getItem("smp_muse_spark_base_url") : null) ||
-    process.env.NEXT_PUBLIC_MUSE_SPARK_BASE_URL ||
-    "https://api.aimlapi.com/v1";
-
   const model =
-    (typeof window !== "undefined" ? localStorage.getItem("smp_muse_spark_model") : null) ||
-    process.env.NEXT_PUBLIC_MUSE_SPARK_MODEL ||
-    "meta/muse-spark-1.2";
+    (typeof window !== "undefined" ? localStorage.getItem("smp_openrouter_model") : null) ||
+    process.env.NEXT_PUBLIC_OPENROUTER_MODEL ||
+    DEFAULT_MODEL;
 
   if (!apiKey) {
-    throw new Error(
-      "No Muse Spark API key found. Please run ./run_setup_key.sh or configure it in Settings."
+    throw new AutofillError(
+      401,
+      "No OpenRouter API key found. Run ./run_setup_key.sh or configure it in the API Key settings modal."
     );
   }
 
-  const prompt = `You are a medical school admissions and Special Master's Programs (SMP) expert assistant.
-Given the following input: "${query}"
+  const prompt = `You are an expert advisor for medical school admissions and Special Master's Programs (SMPs).
+Verify and provide accurate admissions metadata for this program query: "${query}"
 
-Return a single JSON object with accurate or realistic standard details for this SMP/Post-Bacc program.
-Format your output as raw JSON ONLY with these exact keys:
-{
-  "programName": "Full program name",
-  "university": "University name",
-  "degreeType": "Degree/Credential type (e.g. M.S. Physiology, M.A. Medical Sciences, Post-Bacc Certificate)",
-  "deadline": "Estimated or typical application deadline in YYYY-MM-DD format (e.g. 2026-05-15)",
-  "gpaRequirement": "Typical minimum GPA (e.g. 3.0+)",
-  "mcatRequirement": "Typical minimum or recommended MCAT (e.g. 500+ or Optional)",
-  "appFee": "Application fee (e.g. $80)",
-  "portalUrl": "Official admissions URL or homepage",
-  "notes": "1-2 concise sentences summarizing linkage to medical school, duration, and key curriculum highlights."
-}
-Do not include markdown formatting, backticks, or preamble. Return only the raw JSON object.`;
+Ensure:
+- Program name and University are properly separated.
+- Deadline is estimated or standard in YYYY-MM-DD format.
+- Standard cutoffs for GPA and MCAT are provided.
+- Portal URL points to the official institution webpage.`;
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetch(OPENROUTER_ENDPOINT, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://nikhi1g.github.io/smp/",
+      "X-Title": "SMP Application Tracker",
     },
     body: JSON.stringify({
       model,
       messages: [
         {
           role: "system",
-          content: "You return strictly valid raw JSON without code blocks or markdown wrappers.",
+          content: "You extract and structure Special Master's Program (SMP) metadata. Return facts supported by medical admissions standards. Strictly output JSON matching the required schema.",
         },
-        {
-          role: "user",
-          content: prompt,
-        },
+        { role: "user", content: prompt },
       ],
-      temperature: 0.2,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "smp_program_metadata",
+          strict: true,
+          schema: programSchema(),
+        },
+      },
+      temperature: 0.1,
+      max_tokens: 1000,
     }),
   });
 
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`API error (${response.status}): ${errText}`);
+    const message = data?.error?.message || `OpenRouter request failed (${response.status})`;
+    throw new AutofillError(response.status, message);
   }
 
-  const data = await response.json();
-  const rawContent = data.choices?.[0]?.message?.content || "{}";
-  const cleaned = rawContent.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new AutofillError(502, "OpenRouter returned an empty response.");
+  }
 
-  return JSON.parse(cleaned) as AutofillResult;
+  try {
+    const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    return JSON.parse(cleaned) as AutofillResult;
+  } catch {
+    throw new AutofillError(502, "Failed to parse structured JSON from OpenRouter completion.");
+  }
 }
