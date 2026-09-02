@@ -48,8 +48,9 @@ function parseAutofillResult(data: unknown): AutofillResult {
   ] as const;
 
   for (const field of fields) {
-    if (typeof source[field] === "string" && source[field].trim()) {
-      result[field] = source[field].trim();
+    if (typeof source[field] === "string") {
+      const value = source[field].trim();
+      if (value && value.toLowerCase() !== "not specified") result[field] = value;
     }
   }
   return result;

@@ -272,7 +272,7 @@ function ApplicationEditor({
     university: editingApp?.university ?? "",
     status: editingApp?.status ?? "Researching",
     deadline: editingApp?.deadline ?? "",
-    degreeType: editingApp?.degreeType ?? "MS / SMP",
+    degreeType: editingApp?.degreeType ?? "",
     gpaRequirement: editingApp?.gpaRequirement ?? "",
     mcatRequirement: editingApp?.mcatRequirement ?? "",
     appFee: editingApp?.appFee ?? "",
@@ -408,6 +408,7 @@ function ApplicationEditor({
                 type="text"
                 name="degreeType"
                 value={formState.degreeType}
+                placeholder="e.g. Master of Science"
                 onChange={(e) => setFormState({ ...formState, degreeType: e.target.value })}
                 className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
               />
