@@ -1,14 +1,11 @@
-import { fetchApplications } from "@/lib/sheets";
 import { TrackerDashboard } from "@/components/TrackerDashboard";
 
-export const dynamic = "force-dynamic";
-
-export default async function Page() {
-  const { data: applications, source } = await fetchApplications();
-
+// Static exports cannot run server-side data loaders at build time. The client
+// dashboard hydrates this serializable shell from localStorage/GitHub after load.
+export default function Page() {
   return (
     <main className="min-h-screen">
-      <TrackerDashboard initialApplications={applications} source={source} />
+      <TrackerDashboard initialApplications={[]} source="local_fallback" />
     </main>
   );
 }
