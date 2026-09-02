@@ -18,8 +18,7 @@ export class AutofillError extends Error {
 }
 
 export const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
-export const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct";
-
+export const DEFAULT_MODEL = "deepseek/deepseek-v4-flash-latest";
 function programSchema() {
   return {
     type: "object",

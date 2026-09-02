@@ -21,10 +21,10 @@ if [ -z "$API_KEY" ]; then
   exit 1
 fi
 
-echo -n "Enter Model Name (Press Enter for default: meta-llama/llama-3.3-70b-instruct): "
+echo -n "Enter Model Name (Press Enter for default: deepseek/deepseek-v4-flash-latest): "
 read MODEL_NAME
 if [ -z "$MODEL_NAME" ]; then
-  MODEL_NAME="meta-llama/llama-3.3-70b-instruct"
+  MODEL_NAME="deepseek/deepseek-v4-flash-latest"
 fi
 
 BASE_URL="https://openrouter.ai/api/v1"
