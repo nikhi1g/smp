@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { Key, X, Check, Eye, EyeOff } from "lucide-react";
-import { DEFAULT_MODEL } from "@/lib/autofill";
 
 interface Props {
   isOpen: boolean;
@@ -11,14 +10,14 @@ interface Props {
 
 export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [model, setModel] = useState("deepseek/deepseek-v4-flash-latest");
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setApiKey(localStorage.getItem("smp_openrouter_api_key") || "");
-      setModel(localStorage.getItem("smp_openrouter_model") || DEFAULT_MODEL);
+      setModel(localStorage.getItem("smp_openrouter_model") || "deepseek/deepseek-v4-flash-latest");
     }
   }, [isOpen]);
 
@@ -58,13 +57,13 @@ export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
         </div>
 
         <p className="text-xs text-[var(--sub)] mb-4 leading-relaxed">
-          Your OpenRouter API token is stored securely in your browser&apos;s local storage (`localStorage`) and sent via HTTPS directly to `openrouter.ai/api/v1` for structured schema autofill.
+          Autofill is powered by the serverless Cloudflare Worker proxy (`smp-api.gptminimal.workers.dev`). If you wish to use a personal key directly in your browser, configure it below:
         </p>
 
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[var(--sub)] mb-1 uppercase tracking-wider">
-              OpenRouter API Key
+              OpenRouter API Key (Optional)
             </label>
             <div className="relative flex items-center">
               <input
@@ -92,12 +91,9 @@ export function ApiKeySettingsModal({ isOpen, onClose }: Props) {
               type="text"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder={DEFAULT_MODEL}
+              placeholder="deepseek/deepseek-v4-flash-latest"
               className="w-full px-3 py-2 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-sm text-[var(--fg)] focus:outline-none focus:border-[var(--acc)]"
             />
-            <p className="text-[11px] text-[var(--sub)] mt-1">
-              Supports `meta-llama/llama-3.3-70b-instruct`, `anthropic/claude-3.5-sonnet`, `openai/gpt-4o-mini`, etc.
-            </p>
           </div>
         </div>
 

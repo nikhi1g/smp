@@ -316,7 +316,7 @@ function ApplicationEditor({
         <header className="flex items-start justify-between border-b border-[#d8dee4] px-5 py-4 dark:border-[#444c56] sm:px-6">
           <div>
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#57606a] dark:text-[#768390]">Program details</p>
-            <h2 id="application-editor-title" className="text-lg font-semibold tracking-tight">{editingApp ? "Edit program" : "Add Special Master's program"}</h2>
+            <h2 id="application-editor-title" className="text-lg font-semibold tracking-tight">{editingApp ? "Edit program" : "Add program"}</h2>
           </div>
           <button type="button" onClick={onCancel} aria-label="Close program dialog" className="rounded-md p-1.5 text-[#57606a] transition hover:bg-[#f6f8fa] hover:text-[#24292f] focus:outline-none focus:ring-2 focus:ring-[#0969da] dark:text-[#768390] dark:hover:bg-[#2d333b] dark:hover:text-[#adbac7]"><X className="h-5 w-5" /></button>
         </header>
@@ -794,7 +794,7 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
           <div>
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                Special Master&apos;s Programs Tracker
+                Admissions &amp; Programs Tracker
               </h1>
               {(isGithubSynced || source === "google_sheets") && (
                 <span

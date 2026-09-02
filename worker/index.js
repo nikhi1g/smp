@@ -55,39 +55,39 @@ function programSchema() {
     properties: {
       programName: {
         type: 'string',
-        description: 'Official full program title (e.g. Special Master\'s Program in Physiology)',
+        description: 'Official program title (e.g. Doctor of Medicine (MD), M.S. in Physiology, Post-Bacc Pre-Med)',
       },
       university: {
         type: 'string',
-        description: 'Official university name (e.g. Georgetown University)',
+        description: 'Official university or institution name (e.g. University of Queensland / Ochsner Health)',
       },
       degreeType: {
         type: 'string',
-        description: 'Degree award type (e.g. M.S. Physiology, M.A. Medical Sciences, Post-Bacc Certificate)',
+        description: 'Degree award type (e.g. M.D., M.S., M.A., Certificate)',
       },
       deadline: {
         type: 'string',
-        description: 'Application deadline in YYYY-MM-DD format (e.g. 2026-05-15)',
+        description: 'Application deadline in YYYY-MM-DD format (e.g. 2026-08-10)',
       },
       gpaRequirement: {
         type: 'string',
-        description: 'Minimum or recommended undergraduate GPA cutoff (e.g. 3.0+)',
+        description: 'Minimum or recommended GPA cutoff (e.g. 3.0+ or 5.0/7.0)',
       },
       mcatRequirement: {
         type: 'string',
-        description: 'Minimum or recommended MCAT score cutoff (e.g. 500+ or Optional)',
+        description: 'Minimum or recommended MCAT cutoff (e.g. 504+ or Optional)',
       },
       appFee: {
         type: 'string',
-        description: 'Application fee (e.g. $80)',
+        description: 'Application fee (e.g. $100 or A$150)',
       },
       portalUrl: {
         type: 'string',
-        description: 'Canonical link to official program or application portal',
+        description: 'Canonical link to official application portal or admissions webpage',
       },
       notes: {
         type: 'string',
-        description: 'Concise summary of medical school linkage, curriculum, and timeline highlights.',
+        description: '1-2 concise sentences summarizing curriculum, clinical locations, linkage, or admissions highlights.',
       },
     },
     required: ['programName', 'university', 'degreeType', 'deadline', 'gpaRequirement', 'mcatRequirement', 'appFee', 'portalUrl', 'notes'],
@@ -96,13 +96,13 @@ function programSchema() {
 }
 
 async function requestOpenRouterMetadata(env, query) {
-  const prompt = `You are an expert advisor for medical school admissions and Special Master's Programs (SMPs).
-Verify and provide accurate admissions metadata for this program query: "${query}"
+  const prompt = `You are an expert admissions advisor for Medical School (MD/DO), Special Master's Programs (SMPs), Post-Baccs, and graduate healthcare degrees.
+Provide accurate admissions metadata for this program query: "${query}"
 
 Ensure:
 - Program name and University are properly separated.
 - Deadline is estimated or standard in YYYY-MM-DD format.
-- Standard cutoffs for GPA and MCAT are provided.
+- Cutoffs for GPA and MCAT/GRE are provided.
 - Portal URL points to the official institution webpage.`;
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -111,21 +111,21 @@ Ensure:
       'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': 'https://nikhi1g.github.io/smp/',
-      'X-Title': 'SMP Application Tracker',
+      'X-Title': 'SMP & Medical Program Tracker',
     },
     body: JSON.stringify({
       model: env.OPENROUTER_MODEL || DEFAULT_MODEL,
       messages: [
         {
           role: 'system',
-          content: 'You extract and structure Special Master\'s Program (SMP) metadata. Return facts supported by medical admissions standards. Strictly output JSON matching the required schema.',
+          content: 'You extract and structure medical school, SMP, and graduate program admissions metadata. Return strict JSON matching the schema.',
         },
         { role: 'user', content: prompt },
       ],
       response_format: {
         type: 'json_schema',
         json_schema: {
-          name: 'smp_program_metadata',
+          name: 'program_admissions_metadata',
           strict: true,
           schema: programSchema(),
         },

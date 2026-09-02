@@ -120,7 +120,7 @@ export const ApplicationSchema = z.object({
   updatedAt: z.string().default(() => new Date().toISOString()),
 });
 
-type ParsedApplication = z.infer<typeof ApplicationSchema>;
+export type ParsedApplication = z.infer<typeof ApplicationSchema>;
 export type Application = Omit<ParsedApplication, "materials" | "lorRequests" | "actionLog"> & {
   materials?: MaterialItem[];
   lorRequests?: LORRequest[];

@@ -9,13 +9,14 @@ import {
   LORRequestSchema,
   MaterialItem,
   MaterialItemSchema,
+  ParsedApplication,
 } from "@/types/application";
+import { DEFAULT_PROGRAMS } from "@/lib/default-programs";
 
-export const APPLICATION_STORAGE_KEY = "smp-applications";
 export const APPLICATION_EXPORT_VERSION = 1;
+export const APPLICATION_STORAGE_KEY = "smp-applications";
 export const DEFAULT_GITHUB_DATA_PATH = "data/applications.json";
 export const DEFAULT_GITHUB_ISSUE_LABEL = "smp-application";
-
 export type GitHubDataSource = "issues" | "content" | "auto";
 export type SyncDirection = "pull" | "push" | "both";
 
@@ -214,17 +215,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readLocalApplications(storageKey = APPLICATION_STORAGE_KEY): Application[] {
   const storage = getStorage();
-  if (!storage) return [];
+  if (!storage) return DEFAULT_PROGRAMS;
 
   try {
     const raw = storage.getItem(storageKey);
-    if (!raw) return [];
-    return parseApplicationList(JSON.parse(raw));
+    if (!raw) {
+      storage.setItem(storageKey, JSON.stringify(DEFAULT_PROGRAMS));
+      return DEFAULT_PROGRAMS;
+    }
+    const list = parseApplicationList(JSON.parse(raw));
+    return list.length > 0 ? list : DEFAULT_PROGRAMS;
   } catch {
-    return [];
+    return DEFAULT_PROGRAMS;
   }
 }
-
 function writeLocalApplications(applications: Application[], storageKey = APPLICATION_STORAGE_KEY): void {
   const storage = getStorage();
   if (!storage) return;

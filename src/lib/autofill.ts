@@ -17,8 +17,15 @@ export class AutofillError extends Error {
   }
 }
 
-export const DEFAULT_MODEL = "deepseek/deepseek-v4-flash-latest";
 export const DEFAULT_WORKER_ENDPOINT = "https://smp-api.gptminimal.workers.dev/autofill";
+
+function extractErrorMessage(data: unknown, fallback: string): string {
+  if (data && typeof data === "object" && "error" in data) {
+    const candidate = data.error;
+    if (typeof candidate === "string") return candidate;
+  }
+  return fallback;
+}
 
 export async function requestProgramAutofill(query: string): Promise<AutofillResult> {
   const workerEndpoint =
@@ -26,9 +33,9 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
     process.env.NEXT_PUBLIC_WORKER_ENDPOINT ||
     DEFAULT_WORKER_ENDPOINT;
 
-  // 1. Try secure Cloudflare Worker backend (no user API key needed)
+  // 1. Primary: Contact Cloudflare Worker backend (mimics seminal-papers-api)
   try {
-    const workerRes = await fetch(workerEndpoint, {
+    const response = await fetch(workerEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -36,15 +43,20 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
       body: JSON.stringify({ query }),
     });
 
-    if (workerRes.ok) {
-      const data = await workerRes.json();
+    const data: unknown = await response.json().catch(() => ({}));
+    if (response.ok) {
       return data as AutofillResult;
     }
-  } catch {
-    // Fall through to direct local key if worker is not yet deployed
+
+    if (response.status === 503 || response.status === 400 || response.status === 502) {
+      const msg = extractErrorMessage(data, `Worker returned status ${response.status}`);
+      throw new AutofillError(response.status, msg);
+    }
+  } catch (err) {
+    if (err instanceof AutofillError) throw err;
   }
 
-  // 2. Fallback to direct client key / local env if configured
+  // 2. Secondary fallback if local token is present (e.g. running localhost)
   const apiKey =
     (typeof window !== "undefined" ? localStorage.getItem("smp_openrouter_api_key") : null) ||
     process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ||
@@ -53,7 +65,7 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
   if (!apiKey) {
     throw new AutofillError(
       503,
-      "Autofill proxy worker is deploying. You can also run ./run_setup_key.sh for local use."
+      "Autofill proxy is ready. To use local direct fallback, configure your OpenRouter token via ./run_setup.sh or API Key settings."
     );
   }
 
@@ -68,18 +80,18 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
       "HTTP-Referer": "https://nikhi1g.github.io/smp/",
-      "X-Title": "SMP Application Tracker",
+      "X-Title": "SMP & Medical Program Tracker",
     },
     body: JSON.stringify({
       model,
       messages: [
         {
           role: "system",
-          content: "You extract and structure Special Master's Program (SMP) metadata. Return valid JSON only.",
+          content: "You extract and structure medical school, SMP, and graduate program admissions metadata. Return strict JSON.",
         },
         {
           role: "user",
-          content: `Return accurate SMP admissions metadata for query: "${query}" as JSON with keys: programName, university, degreeType, deadline, gpaRequirement, mcatRequirement, appFee, portalUrl, notes.`,
+          content: `Return accurate admissions metadata for query: "${query}" as JSON with keys: programName, university, degreeType, deadline, gpaRequirement, mcatRequirement, appFee, portalUrl, notes.`,
         },
       ],
       temperature: 0.1,
@@ -87,12 +99,21 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
     }),
   });
 
-  const data = await response.json().catch(() => ({}));
+  const data: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new AutofillError(response.status, data?.error?.message || "Autofill request failed");
+    throw new AutofillError(response.status, extractErrorMessage(data, `Request failed (${response.status})`));
   }
 
-  const content = data?.choices?.[0]?.message?.content;
-  const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  return JSON.parse(cleaned) as AutofillResult;
+  if (data && typeof data === "object" && "choices" in data && Array.isArray(data.choices)) {
+    const firstChoice: unknown = data.choices[0];
+    if (firstChoice && typeof firstChoice === "object" && "message" in firstChoice) {
+      const msg: unknown = firstChoice.message;
+      if (msg && typeof msg === "object" && "content" in msg && typeof msg.content === "string") {
+        const cleaned = msg.content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+        return JSON.parse(cleaned) as AutofillResult;
+      }
+    }
+  }
+
+  throw new AutofillError(502, "Invalid response from OpenRouter");
 }
