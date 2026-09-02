@@ -806,9 +806,22 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8c959f] dark:text-[#636e7b]" />
             <input type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by program, university, or status" className="block w-full rounded-md border border-[#d0d7de] bg-white py-2 pl-9 pr-3 text-sm text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#adbac7]" />
           </label>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Application status filters">
+          <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-[#f6f8fa] dark:bg-[#22272e] border border-[#d0d7de] dark:border-[#444c56] rounded-lg" role="tablist" aria-label="Application status filters">
             {FILTER_STATUSES.map((status) => (
-              <button key={status} type="button" role="tab" aria-selected={filterStatus === status} onClick={() => setFilterStatus(status)} className={`shrink-0 rounded-md border px-2.5 py-1.5 text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-[#0969da] ${filterStatus === status ? "border-[#0969da]/40 bg-[#ddf4ff] text-[#0969da] dark:border-[#539bf5]/40 dark:bg-[#1f3b53] dark:text-[#539bf5]" : "border-[#d0d7de] bg-white text-[#57606a] hover:bg-[#f6f8fa] dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#768390] dark:hover:bg-[#2d333b]"}`}>{status === "ALL" ? "All" : status}</button>
+              <button
+                key={status}
+                type="button"
+                role="tab"
+                aria-selected={filterStatus === status}
+                onClick={() => setFilterStatus(status)}
+                className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold transition select-none ${
+                  filterStatus === status
+                    ? "bg-white dark:bg-[#2d333b] text-[#0969da] dark:text-[#539bf5] shadow-xs border border-[#d0d7de] dark:border-[#539bf5]/40"
+                    : "text-[#57606a] dark:text-[#768390] hover:text-[#24292f] dark:hover:text-[#adbac7] hover:bg-white/60 dark:hover:bg-[#2d333b]/60 border border-transparent"
+                }`}
+              >
+                {status === "ALL" ? "All" : status}
+              </button>
             ))}
           </div>
         </section>
