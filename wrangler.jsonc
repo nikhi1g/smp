@@ -6,7 +6,7 @@
   "workers_dev": true,
   "vars": {
     "ALLOWED_ORIGINS": "https://nikhi1g.github.io,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8787,http://127.0.0.1:8787",
-    "OPENROUTER_MODEL": "deepseek/deepseek-chat"
+    "OPENROUTER_MODEL": "~deepseek/deepseek-v4-flash-latest"
   },
   "observability": {
     "enabled": true,

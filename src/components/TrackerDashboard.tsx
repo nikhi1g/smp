@@ -20,7 +20,6 @@ import {
   FileText,
   GraduationCap,
   History,
-  Key,
   Paperclip,
   Plus,
   Search,

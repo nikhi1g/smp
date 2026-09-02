@@ -18,7 +18,7 @@ export class AutofillError extends Error {
 }
 
 export const DEFAULT_WORKER_ENDPOINT = "https://smp-api.gptminimal.workers.dev/autofill";
-export const DEFAULT_MODEL = "deepseek/deepseek-chat";
+const REQUEST_TIMEOUT_MS = 32000;
 
 function extractErrorMessage(data: unknown, fallback: string): string {
   if (data && typeof data === "object" && "error" in data) {
@@ -28,98 +28,63 @@ function extractErrorMessage(data: unknown, fallback: string): string {
   return fallback;
 }
 
+function parseAutofillResult(data: unknown): AutofillResult {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new AutofillError(502, "Autofill returned an invalid response.");
+  }
+
+  const source = data as Record<string, unknown>;
+  const result: AutofillResult = {};
+  const fields = [
+    "programName",
+    "university",
+    "degreeType",
+    "deadline",
+    "gpaRequirement",
+    "mcatRequirement",
+    "appFee",
+    "portalUrl",
+    "notes",
+  ] as const;
+
+  for (const field of fields) {
+    if (typeof source[field] === "string" && source[field].trim()) {
+      result[field] = source[field].trim();
+    }
+  }
+  return result;
+}
+
 export async function requestProgramAutofill(query: string): Promise<AutofillResult> {
   const workerEndpoint =
     (typeof window !== "undefined" ? localStorage.getItem("smp_worker_endpoint") : null) ||
     process.env.NEXT_PUBLIC_WORKER_ENDPOINT ||
     DEFAULT_WORKER_ENDPOINT;
 
-  // 1. Primary: Contact Cloudflare Worker backend (no user API key needed)
+  let response: Response;
   try {
-    const response = await fetch(workerEndpoint, {
+    response = await fetch(workerEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-
-    const data: unknown = await response.json().catch(() => ({}));
-    if (response.ok) {
-      return data as AutofillResult;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new AutofillError(504, "Admissions search timed out. Please try again.");
     }
-
-    if (response.status === 503 || response.status === 400 || response.status === 502 || response.status === 404) {
-      const msg = extractErrorMessage(data, `Worker returned status ${response.status}`);
-      throw new AutofillError(response.status, msg);
-    }
-  } catch (err) {
-    if (err instanceof AutofillError) throw err;
+    throw new AutofillError(503, "Could not reach the admissions search service. Please try again.");
   }
-
-  // 2. Secondary fallback if local token is present (e.g. running localhost)
-  const apiKey =
-    (typeof window !== "undefined" ? localStorage.getItem("smp_openrouter_api_key") : null) ||
-    process.env.NEXT_PUBLIC_OPENROUTER_API_KEY ||
-    "";
-
-  if (!apiKey) {
-    throw new AutofillError(
-      503,
-      "Autofill proxy is ready. To use local direct fallback, configure your OpenRouter token via ./run_setup.sh."
-    );
-  }
-
-  const model =
-    (typeof window !== "undefined" ? localStorage.getItem("smp_openrouter_model") : null) ||
-    process.env.NEXT_PUBLIC_OPENROUTER_MODEL ||
-    DEFAULT_MODEL;
-
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://nikhi1g.github.io/smp/",
-      "X-Title": "SMP & Medical Program Tracker",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You extract and structure medical school, SMP, and graduate program admissions metadata. Return strict JSON. Preserve the exact institution, program, and URL supplied by the user; never substitute a different institution.",
-        },
-        {
-          role: "user",
-          content: `Extract accurate admissions metadata from this exact query payload:
----
-${query}
----
-Treat explicit institution, program, and URL values as authoritative. If a URL is provided, set portalUrl to that exact URL. Use "Not specified" rather than inventing unsupported deadlines, requirements, fees, or institutions. Return JSON with keys: programName, university, degreeType, deadline, gpaRequirement, mcatRequirement, appFee, portalUrl, notes.`,
-      },
-      ],
-      temperature: 0.1,
-      max_tokens: 1000,
-    }),
-  });
 
   const data: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new AutofillError(response.status, extractErrorMessage(data, `Request failed (${response.status})`));
+    throw new AutofillError(
+      response.status,
+      extractErrorMessage(data, `Admissions search failed (${response.status}).`)
+    );
   }
 
-  if (data && typeof data === "object" && "choices" in data && Array.isArray(data.choices)) {
-    const firstChoice: unknown = data.choices[0];
-    if (firstChoice && typeof firstChoice === "object" && "message" in firstChoice) {
-      const msg: unknown = firstChoice.message;
-      if (msg && typeof msg === "object" && "content" in msg && typeof msg.content === "string") {
-        const cleaned = msg.content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        return JSON.parse(cleaned) as AutofillResult;
-      }
-    }
-  }
-
-  throw new AutofillError(502, "Invalid response from OpenRouter");
+  return parseAutofillResult(data);
 }
