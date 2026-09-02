@@ -762,20 +762,15 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
                 Special Master&apos;s Programs Tracker
               </h1>
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold ${
-                  isGithubSynced || source === "google_sheets"
-                    ? "border-[#1f883d]/30 bg-[#dafbe1] text-[#1f883d] dark:border-[#46954a]/40 dark:bg-[#1f3b2b] dark:text-[#56d364]"
-                    : "border-[#d0d7de] bg-[#f6f8fa] text-[#57606a] dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#768390]"
-                }`}
-              >
-                <Database className="h-3.5 w-3.5" />
-                {isGithubSynced ? "GitHub synced" : source === "google_sheets" ? "Google Sheets connected" : "Local storage"}
-              </span>
+              {(isGithubSynced || source === "google_sheets") && (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[#1f883d]/30 bg-[#dafbe1] px-2 py-1 text-[11px] font-semibold text-[#1f883d] dark:border-[#46954a]/40 dark:bg-[#1f3b2b] dark:text-[#56d364]"
+                >
+                  <Database className="h-3.5 w-3.5" />
+                  {isGithubSynced ? "GitHub synced" : "Google Sheets connected"}
+                </span>
+              )}
             </div>
-            <p className="mt-2 max-w-2xl text-sm text-[#57606a] dark:text-[#768390]">
-              Track deadlines, materials, recommendations, and decisions with Muse Spark autocomplete.
-            </p>
           </div>
           <div className="flex items-center gap-2 self-start md:self-auto">
             <button
