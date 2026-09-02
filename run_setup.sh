@@ -3,13 +3,12 @@ set -e
 
 cd "$(dirname "$0")"
 
-ENV_FILE=".env.local"
-DEFAULT_MODEL="deepseek/deepseek-v4-flash-latest"
-BASE_URL="https://openrouter.ai/api/v1"
-
 echo "========================================="
-echo "       SMP Tracker Key Setup             "
+echo "   SMP Tracker - Cloudflare Key Setup    "
 echo "========================================="
+echo ""
+echo "This script securely stores your OpenRouter API key"
+echo "as an encrypted secret on your Cloudflare Worker (smp-api)."
 echo ""
 echo -n "Enter your OpenRouter API Key (sk-or-...): "
 read -s API_KEY
@@ -20,16 +19,9 @@ if [ -z "$API_KEY" ]; then
   exit 1
 fi
 
-# Overwrite .env.local securely with 1 single input
-cat <<EOF > "$ENV_FILE"
-NEXT_PUBLIC_OPENROUTER_BASE_URL="$BASE_URL"
-NEXT_PUBLIC_OPENROUTER_MODEL="$DEFAULT_MODEL"
-OPENROUTER_API_KEY="$API_KEY"
-NEXT_PUBLIC_OPENROUTER_API_KEY="$API_KEY"
-EOF
+echo "Uploading secret to Cloudflare Worker 'smp-api'..."
+echo -n "$API_KEY" | npx wrangler secret put OPENROUTER_API_KEY
 
-chmod 600 "$ENV_FILE"
-
-echo "✓ Overwrote .env.local with your new OpenRouter key (permissions 600)."
-echo "✓ Model: $DEFAULT_MODEL"
-echo "✓ Done. You can now launch with ./run.sh"
+echo ""
+echo "✓ Secret OPENROUTER_API_KEY successfully saved on Cloudflare Worker."
+echo "✓ Live autofill at https://nikhi1g.github.io/smp/ is now active."
