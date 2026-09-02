@@ -1,5 +1,6 @@
 node_modules
 .next
+out
 .data_applications.json
 .env*.local
 .env
