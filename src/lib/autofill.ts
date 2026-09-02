@@ -18,6 +18,7 @@ export class AutofillError extends Error {
 }
 
 export const DEFAULT_WORKER_ENDPOINT = "https://smp-api.gptminimal.workers.dev/autofill";
+export const DEFAULT_MODEL = "deepseek/deepseek-chat";
 
 function extractErrorMessage(data: unknown, fallback: string): string {
   if (data && typeof data === "object" && "error" in data) {
@@ -33,7 +34,7 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
     process.env.NEXT_PUBLIC_WORKER_ENDPOINT ||
     DEFAULT_WORKER_ENDPOINT;
 
-  // 1. Primary: Contact Cloudflare Worker backend (mimics seminal-papers-api)
+  // 1. Primary: Contact Cloudflare Worker backend (no user API key needed)
   try {
     const response = await fetch(workerEndpoint, {
       method: "POST",
@@ -48,7 +49,7 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
       return data as AutofillResult;
     }
 
-    if (response.status === 503 || response.status === 400 || response.status === 502) {
+    if (response.status === 503 || response.status === 400 || response.status === 502 || response.status === 404) {
       const msg = extractErrorMessage(data, `Worker returned status ${response.status}`);
       throw new AutofillError(response.status, msg);
     }
@@ -65,14 +66,14 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
   if (!apiKey) {
     throw new AutofillError(
       503,
-      "Autofill proxy is ready. To use local direct fallback, configure your OpenRouter token via ./run_setup.sh or API Key settings."
+      "Autofill proxy is ready. To use local direct fallback, configure your OpenRouter token via ./run_setup.sh."
     );
   }
 
   const model =
     (typeof window !== "undefined" ? localStorage.getItem("smp_openrouter_model") : null) ||
     process.env.NEXT_PUBLIC_OPENROUTER_MODEL ||
-    "deepseek/deepseek-v4-flash-latest";
+    DEFAULT_MODEL;
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",

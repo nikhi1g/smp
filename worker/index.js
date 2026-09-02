@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash-latest';
+const DEFAULT_MODEL = 'deepseek/deepseek-chat';
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://nikhi1g.github.io',
   'http://localhost:3000',
@@ -105,6 +105,8 @@ Ensure:
 - Cutoffs for GPA and MCAT/GRE are provided.
 - Portal URL points to the official institution webpage.`;
 
+  const model = env.OPENROUTER_MODEL || DEFAULT_MODEL;
+
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -114,7 +116,7 @@ Ensure:
       'X-Title': 'SMP & Medical Program Tracker',
     },
     body: JSON.stringify({
-      model: env.OPENROUTER_MODEL || DEFAULT_MODEL,
+      model,
       messages: [
         {
           role: 'system',

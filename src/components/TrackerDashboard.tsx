@@ -49,7 +49,6 @@ import {
   ActionHistoryModal,
   ActionLogEntry,
 } from "@/components/ActionHistoryModal";
-import { ApiKeySettingsModal } from "@/components/ApiKeySettingsModal";
 import { requestProgramAutofill } from "@/lib/autofill";
 
 const WORKFLOW_STEPS = ["Researching", "In Progress", "Submitted", "Interview", "Decision"] as const;
@@ -101,7 +100,6 @@ interface ApplicationEditorProps {
   isPending: boolean;
   onCancel: () => void;
   onSubmit: (data: FormData) => Promise<void>;
-  onOpenSettings: () => void;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -243,7 +241,6 @@ function ApplicationEditor({
   isPending,
   onCancel,
   onSubmit,
-  onOpenSettings,
 }: ApplicationEditorProps) {
   const [formState, setFormState] = useState({
     programName: editingApp?.programName ?? "",
@@ -469,15 +466,8 @@ function ApplicationEditor({
           </label>
 
           {autofillError && (
-            <div className="flex items-center justify-between rounded-md border border-[#cf222e]/40 bg-[#ffebe9] p-2.5 text-xs text-[#cf222e] dark:border-[#f47067]/40 dark:bg-[#3b2225] dark:text-[#f47067]">
-              <span>{autofillError}</span>
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="underline font-semibold ml-2 hover:opacity-80"
-              >
-                Configure Key
-              </button>
+            <div className="rounded-md border border-[#cf222e]/40 bg-[#ffebe9] p-2.5 text-xs text-[#cf222e] dark:border-[#f47067]/40 dark:bg-[#3b2225] dark:text-[#f47067]">
+              {autofillError}
             </div>
           )}
 
@@ -545,7 +535,6 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingApp, setEditingApp] = useState<Application | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeApplication, setActiveApplication] = useState<Application | null>(null);
   const [activeModal, setActiveModal] = useState<ModalName>(null);
   const [materialsByApp, setMaterialsByApp] = useState<Record<string, MaterialItem[]>>({});
@@ -809,15 +798,6 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
           <div className="flex items-center gap-2 self-start md:self-auto">
             <button
               type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-semibold text-[#57606a] transition hover:bg-[#f6f8fa] hover:text-[#24292f] focus:outline-none focus:ring-2 focus:ring-[#0969da] dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7] dark:hover:bg-[#2d333b]"
-              title="Configure OpenRouter API key"
-            >
-              <Key className="h-4 w-4" />
-              API Key
-            </button>
-            <button
-              type="button"
               onClick={handleOpenAdd}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0969da] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0860ca] focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:ring-offset-2 dark:bg-[#539bf5] dark:text-[#0d1117] dark:hover:bg-[#6cb6ff]"
             >
@@ -921,13 +901,6 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
           isPending={pendingAction === "application"}
           onCancel={() => { setIsEditorOpen(false); setEditingApp(null); }}
           onSubmit={handleApplicationSubmit}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-        />
-      )}
-      {isSettingsOpen && (
-        <ApiKeySettingsModal
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
         />
       )}
       {activeApplication && activeModal === "materials" && <MaterialsModal isOpen applicationId={activeApplication.id} programName={activeApplication.programName} initialMaterials={materialsFor(activeApplication)} onClose={closeModal} onSave={handleMaterialsSave} />}
