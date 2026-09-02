@@ -88,12 +88,17 @@ export async function requestProgramAutofill(query: string): Promise<AutofillRes
       messages: [
         {
           role: "system",
-          content: "You extract and structure medical school, SMP, and graduate program admissions metadata. Return strict JSON.",
+          content:
+            "You extract and structure medical school, SMP, and graduate program admissions metadata. Return strict JSON. Preserve the exact institution, program, and URL supplied by the user; never substitute a different institution.",
         },
         {
           role: "user",
-          content: `Return accurate admissions metadata for query: "${query}" as JSON with keys: programName, university, degreeType, deadline, gpaRequirement, mcatRequirement, appFee, portalUrl, notes.`,
-        },
+          content: `Extract accurate admissions metadata from this exact query payload:
+---
+${query}
+---
+Treat explicit institution, program, and URL values as authoritative. If a URL is provided, set portalUrl to that exact URL. Use "Not specified" rather than inventing unsupported deadlines, requirements, fees, or institutions. Return JSON with keys: programName, university, degreeType, deadline, gpaRequirement, mcatRequirement, appFee, portalUrl, notes.`,
+      },
       ],
       temperature: 0.1,
       max_tokens: 1000,

@@ -262,12 +262,20 @@ function ApplicationEditor({
   const [autofillError, setAutofillError] = useState<string | null>(null);
   const [showOpenRouterInfo, setShowOpenRouterInfo] = useState(false);
   const handleAutofill = async () => {
-    const query = `${formState.university} ${formState.programName} ${formState.degreeType}`.trim();
+    const query = [
+      ["Program name", formState.programName],
+      ["University", formState.university],
+      ["Degree type", formState.degreeType],
+      ["Portal URL", formState.portalUrl],
+      ["Notes", formState.notes],
+    ]
+      .filter(([, value]) => value.trim())
+      .map(([label, value]) => `${label}: ${value.trim()}`)
+      .join("\n");
     if (!query) {
-      setAutofillError("Please enter at least a program name or university to autofill.");
+      setAutofillError("Please enter at least a program name, university, portal URL, or notes to autofill.");
       return;
     }
-
     setIsAutofilling(true);
     setAutofillError(null);
 
