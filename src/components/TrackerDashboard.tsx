@@ -11,9 +11,11 @@ import {
   ExternalLink,
   FileText,
   History,
+  Key,
   Paperclip,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   UsersRound,
   X,
@@ -45,6 +47,8 @@ import {
   ActionHistoryModal,
   ActionLogEntry,
 } from "@/components/ActionHistoryModal";
+import { ApiKeySettingsModal } from "@/components/ApiKeySettingsModal";
+import { requestProgramAutofill } from "@/lib/autofill";
 
 const WORKFLOW_STEPS = ["Researching", "In Progress", "Submitted", "Interview", "Decision"] as const;
 type WorkflowStatus = (typeof WORKFLOW_STEPS)[number];
@@ -76,20 +80,14 @@ const STATUS_COLORS: Record<string, string> = {
   Waitlisted:
     "border-[#bf8700]/30 bg-[#fff8c5] text-[#9a6700] dark:border-[#d29922]/40 dark:bg-[#3b2f18] dark:text-[#d29922]",
   Rejected:
-    "border-[#cf222e]/30 bg-[#ffebe9] text-[#cf222e] dark:border-[#f47067]/40 dark:bg-[#3b2225] dark:text-[#f47067]",
+    "border-[#cf222e]/30 bg-[#ffebe9] text-[#cf222e] dark:border-[#f47067]/40 dark:bg-[#3b2f18] dark:text-[#f47067]",
 };
 
 const STORAGE_PREFIXES = {
   materials: "smp-tracker:materials:",
   lors: "smp-tracker:lors:",
-  history: "smp-tracker:action-history:",
+  history: "smp-tracker:history:",
 } as const;
-
-type RichApplication = Application & {
-  materials?: MaterialItem[];
-  lorRequests?: LORRequest[];
-  actionLog?: ActionLogEntry[];
-};
 
 interface Props {
   initialApplications: Application[];
@@ -100,66 +98,48 @@ interface ApplicationEditorProps {
   editingApp: Application | null;
   isPending: boolean;
   onCancel: () => void;
-  onSubmit: (formData: FormData) => Promise<void>;
-}
-
-function createId(prefix: string) {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function readStored<T>(prefix: string, id: string): T[] | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(`${prefix}${id}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as T[]) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStored<T>(prefix: string, id: string, value: T[]) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(`${prefix}${id}`, JSON.stringify(value));
-  } catch {
-    // Local state remains usable when a browser denies or fills localStorage.
-  }
+  onSubmit: (data: FormData) => Promise<void>;
+  onOpenSettings: () => void;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null) return null;
-  return value as Record<string, unknown>;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
 }
 
 function normalizeMaterialType(value: unknown): MaterialType {
-  const label = String(value ?? "").trim().toLowerCase();
-  const match = MATERIAL_TYPES.find((type) => type.toLowerCase() === label);
-  if (match) return match;
-  if (label.includes("personal") || label.includes("statement")) return "Personal Statement";
-  if (label.includes("transcript")) return "Transcript";
-  if (label === "cv" || label.includes("resume")) return "CV";
-  if (label.includes("casper")) return "CASPer Score";
-  return "Essay Draft";
-}
-
-function normalizeMaterialSource(value: unknown, url: unknown): MaterialSource {
-  if (value === "upload" || value === "file") return "upload";
-  if (value === "text" || value === "note") return "text";
-  if (typeof url === "string" && url.length > 0) return "link";
-  return "text";
+  const candidate = typeof value === "string" ? value : "";
+  return MATERIAL_TYPES.includes(candidate as MaterialType)
+    ? (candidate as MaterialType)
+    : "Personal Statement";
 }
 
 function normalizeMaterialStatus(value: unknown): MaterialStatus {
-  if (value === "Ready") return "Ready";
-  if (value === "Submitted") return "Submitted";
-  return "Draft";
+  if (value === "Ready" || value === "Draft" || value === "Submitted") {
+    return value;
+  }
+  return "Ready";
+}
+
+function normalizeMaterialSource(value: unknown): MaterialSource {
+  if (value === "upload" || value === "link" || value === "text") {
+    return value;
+  }
+  return "link";
+}
+
+function normalizeLORStatus(value: unknown): LORStatus {
+  if (
+    value === "Not requested" ||
+    value === "Requested" ||
+    value === "Follow-up needed" ||
+    value === "Received"
+  ) {
+    return value;
+  }
+  return "Not requested";
 }
 
 function normalizeMaterials(value: unknown): MaterialItem[] {
@@ -168,29 +148,21 @@ function normalizeMaterials(value: unknown): MaterialItem[] {
   return value.flatMap((entry, index) => {
     const record = asRecord(entry);
     if (!record) return [];
-    const url = typeof record.url === "string" ? record.url : undefined;
-    const name = String(record.name ?? record.title ?? `Material ${index + 1}`).trim();
+    const name = String(record.name ?? record.title ?? "").trim();
     if (!name) return [];
     return [{
       id: String(record.id ?? `material-${index}`),
-      type: normalizeMaterialType(record.type ?? record.category),
       name,
-      status: normalizeMaterialStatus(record.status),
-      source: normalizeMaterialSource(record.source ?? record.sourceType, url),
-      url,
-      notes: typeof record.notes === "string" ? record.notes : undefined,
+      type: normalizeMaterialType(record.type),
+      source: normalizeMaterialSource(record.source),
+      url: typeof record.url === "string" ? record.url : undefined,
+      content: typeof record.content === "string" ? record.content : undefined,
       fileName: typeof record.fileName === "string" ? record.fileName : undefined,
+      status: normalizeMaterialStatus(record.status),
+      notes: typeof record.notes === "string" ? record.notes : undefined,
       updatedAt: String(record.updatedAt ?? ""),
     }];
   });
-}
-
-function normalizeLORStatus(value: unknown): LORStatus {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized.includes("received") || normalized.includes("confirm")) return "Received";
-  if (normalized.includes("follow")) return "Follow-up needed";
-  if (normalized.includes("request")) return "Requested";
-  return "Not requested";
 }
 
 function normalizeRequests(value: unknown): LORRequest[] {
@@ -264,21 +236,73 @@ function statusLabel(status: string): FilterStatus {
   return workflowStatus(status);
 }
 
-
 function ApplicationEditor({
   editingApp,
   isPending,
   onCancel,
   onSubmit,
+  onOpenSettings,
 }: ApplicationEditorProps) {
+  const [formState, setFormState] = useState({
+    programName: editingApp?.programName ?? "",
+    university: editingApp?.university ?? "",
+    status: editingApp?.status ?? "Researching",
+    deadline: editingApp?.deadline ?? "",
+    degreeType: editingApp?.degreeType ?? "MS / SMP",
+    gpaRequirement: editingApp?.gpaRequirement ?? "",
+    mcatRequirement: editingApp?.mcatRequirement ?? "",
+    appFee: editingApp?.appFee ?? "",
+    portalUrl: editingApp?.portalUrl ?? "",
+    transcriptsSent: editingApp?.transcriptsSent ?? false,
+    lorsRequested: editingApp?.lorsRequested ?? false,
+    essayCompleted: editingApp?.essayCompleted ?? false,
+    notes: editingApp?.notes ?? "",
+  });
+
+  const [isAutofilling, setIsAutofilling] = useState(false);
+  const [autofillError, setAutofillError] = useState<string | null>(null);
+
+  const handleAutofill = async () => {
+    const query = `${formState.university} ${formState.programName} ${formState.degreeType}`.trim();
+    if (!query) {
+      setAutofillError("Please enter at least a program name or university to autofill.");
+      return;
+    }
+
+    setIsAutofilling(true);
+    setAutofillError(null);
+
+    try {
+      const result = await requestProgramAutofill(query);
+      setFormState((prev) => ({
+        ...prev,
+        programName: result.programName || prev.programName,
+        university: result.university || prev.university,
+        degreeType: result.degreeType || prev.degreeType,
+        deadline: result.deadline || prev.deadline,
+        gpaRequirement: result.gpaRequirement || prev.gpaRequirement,
+        mcatRequirement: result.mcatRequirement || prev.mcatRequirement,
+        appFee: result.appFee || prev.appFee,
+        portalUrl: result.portalUrl || prev.portalUrl,
+        notes: result.notes ? (prev.notes ? `${prev.notes}\n${result.notes}` : result.notes) : prev.notes,
+      }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Autofill failed";
+      setAutofillError(msg);
+    } finally {
+      setIsAutofilling(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await onSubmit(new FormData(event.currentTarget));
+    const data = new FormData(event.currentTarget);
+    await onSubmit(data);
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#24292f]/60 px-4 py-8 backdrop-blur-sm dark:bg-black/70 sm:items-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#24292f]/60 px-4 py-8 backdrop-blur-xs dark:bg-black/70 sm:items-center"
       role="presentation"
     >
       <section
@@ -298,15 +322,36 @@ function ApplicationEditor({
           {editingApp && <input type="hidden" name="id" value={editingApp.id} />}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-xs font-semibold">Program name *
-              <input type="text" name="programName" required defaultValue={editingApp?.programName ?? ""} placeholder="e.g. M.S. in Physiology" className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+              <input
+                type="text"
+                name="programName"
+                required
+                value={formState.programName}
+                onChange={(e) => setFormState({ ...formState, programName: e.target.value })}
+                placeholder="e.g. M.S. in Physiology"
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              />
             </label>
             <label className="text-xs font-semibold">University *
-              <input type="text" name="university" required defaultValue={editingApp?.university ?? ""} placeholder="e.g. Georgetown University" className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+              <input
+                type="text"
+                name="university"
+                required
+                value={formState.university}
+                onChange={(e) => setFormState({ ...formState, university: e.target.value })}
+                placeholder="e.g. Georgetown University"
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              />
             </label>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <label className="text-xs font-semibold">Status
-              <select name="status" defaultValue={editingApp?.status ?? "Researching"} className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]">
+              <select
+                name="status"
+                value={formState.status}
+                onChange={(e) => setFormState({ ...formState, status: e.target.value as ApplicationStatus })}
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              >
                 <option>Researching</option>
                 <option>In Progress</option>
                 <option>Submitted</option>
@@ -317,43 +362,143 @@ function ApplicationEditor({
               </select>
             </label>
             <label className="text-xs font-semibold">Deadline *
-              <input type="date" name="deadline" required defaultValue={editingApp?.deadline ?? ""} className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+              <input
+                type="date"
+                name="deadline"
+                required
+                value={formState.deadline}
+                onChange={(e) => setFormState({ ...formState, deadline: e.target.value })}
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              />
             </label>
             <label className="text-xs font-semibold">Degree type
-              <input type="text" name="degreeType" defaultValue={editingApp?.degreeType ?? "MS / SMP"} className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+              <input
+                type="text"
+                name="degreeType"
+                value={formState.degreeType}
+                onChange={(e) => setFormState({ ...formState, degreeType: e.target.value })}
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              />
             </label>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <label className="text-xs font-semibold">GPA requirement
-              <input type="text" name="gpaRequirement" defaultValue={editingApp?.gpaRequirement ?? ""} placeholder="3.0+" className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+              <input
+                type="text"
+                name="gpaRequirement"
+                value={formState.gpaRequirement}
+                onChange={(e) => setFormState({ ...formState, gpaRequirement: e.target.value })}
+                placeholder="3.0+"
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              />
             </label>
             <label className="text-xs font-semibold">MCAT requirement
-              <input type="text" name="mcatRequirement" defaultValue={editingApp?.mcatRequirement ?? ""} placeholder="500+" className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+              <input
+                type="text"
+                name="mcatRequirement"
+                value={formState.mcatRequirement}
+                onChange={(e) => setFormState({ ...formState, mcatRequirement: e.target.value })}
+                placeholder="500+"
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              />
             </label>
             <label className="text-xs font-semibold">Application fee
-              <input type="text" name="appFee" defaultValue={editingApp?.appFee ?? ""} placeholder="$80" className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+              <input
+                type="text"
+                name="appFee"
+                value={formState.appFee}
+                onChange={(e) => setFormState({ ...formState, appFee: e.target.value })}
+                placeholder="$80"
+                className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+              />
             </label>
           </div>
           <label className="block text-xs font-semibold">Application portal URL
-            <input type="url" name="portalUrl" defaultValue={editingApp?.portalUrl ?? ""} placeholder="https://..." className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+            <input
+              type="url"
+              name="portalUrl"
+              value={formState.portalUrl}
+              onChange={(e) => setFormState({ ...formState, portalUrl: e.target.value })}
+              placeholder="https://..."
+              className="mt-1.5 block w-full rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+            />
           </label>
           <fieldset className="rounded-lg border border-[#d8dee4] bg-[#f6f8fa]/70 p-3 dark:border-[#444c56] dark:bg-[#2d333b]/55">
             <legend className="px-1 text-xs font-semibold">Requirement checklist</legend>
             <div className="mt-1 grid gap-3 sm:grid-cols-3">
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-medium"><input type="checkbox" name="transcriptsSent" defaultChecked={editingApp?.transcriptsSent} className="rounded border-[#8c959f] text-[#0969da] focus:ring-[#0969da]" /> Transcripts sent</label>
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-medium"><input type="checkbox" name="lorsRequested" defaultChecked={editingApp?.lorsRequested} className="rounded border-[#8c959f] text-[#0969da] focus:ring-[#0969da]" /> LORs requested</label>
-              <label className="flex cursor-pointer items-center gap-2 text-xs font-medium"><input type="checkbox" name="essayCompleted" defaultChecked={editingApp?.essayCompleted} className="rounded border-[#8c959f] text-[#0969da] focus:ring-[#0969da]" /> Essay completed</label>
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+                <input
+                  type="checkbox"
+                  name="transcriptsSent"
+                  checked={formState.transcriptsSent}
+                  onChange={(e) => setFormState({ ...formState, transcriptsSent: e.target.checked })}
+                  className="rounded border-[#8c959f] text-[#0969da] focus:ring-[#0969da]"
+                /> Transcripts sent
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+                <input
+                  type="checkbox"
+                  name="lorsRequested"
+                  checked={formState.lorsRequested}
+                  onChange={(e) => setFormState({ ...formState, lorsRequested: e.target.checked })}
+                  className="rounded border-[#8c959f] text-[#0969da] focus:ring-[#0969da]"
+                /> LORs requested
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-medium">
+                <input
+                  type="checkbox"
+                  name="essayCompleted"
+                  checked={formState.essayCompleted}
+                  onChange={(e) => setFormState({ ...formState, essayCompleted: e.target.checked })}
+                  className="rounded border-[#8c959f] text-[#0969da] focus:ring-[#0969da]"
+                /> Essay completed
+              </label>
             </div>
           </fieldset>
           <label className="block text-xs font-semibold">Notes
-            <textarea name="notes" rows={3} defaultValue={editingApp?.notes ?? ""} placeholder="Linkage terms, committee letter deadlines, interview impressions..." className="mt-1.5 block w-full resize-y rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]" />
+            <textarea
+              name="notes"
+              rows={3}
+              value={formState.notes}
+              onChange={(e) => setFormState({ ...formState, notes: e.target.value })}
+              placeholder="Linkage terms, committee letter deadlines, interview impressions..."
+              className="mt-1.5 block w-full resize-y rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-normal text-[#24292f] outline-none placeholder:text-[#8c959f] focus:border-[#0969da] focus:ring-2 focus:ring-[#0969da]/20 dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7]"
+            />
           </label>
-          <footer className="flex justify-end gap-3 border-t border-[#d8dee4] pt-4 dark:border-[#444c56]">
-            <button type="button" onClick={onCancel} className="rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-semibold text-[#24292f] transition hover:bg-[#f6f8fa] focus:outline-none focus:ring-2 focus:ring-[#0969da] dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#adbac7] dark:hover:bg-[#373e47]">Cancel</button>
-            <button type="submit" disabled={isPending} className="inline-flex items-center gap-2 rounded-md bg-[#0969da] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#0860ca] focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#539bf5] dark:text-[#0d1117] dark:hover:bg-[#6cb6ff]">
-              {isPending && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white dark:border-[#0d1117]/30 dark:border-t-[#0d1117]" />}
-              {isPending ? "Saving..." : editingApp ? "Save changes" : "Add program"}
+
+          {autofillError && (
+            <div className="flex items-center justify-between rounded-md border border-[#cf222e]/40 bg-[#ffebe9] p-2.5 text-xs text-[#cf222e] dark:border-[#f47067]/40 dark:bg-[#3b2225] dark:text-[#f47067]">
+              <span>{autofillError}</span>
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="underline font-semibold ml-2 hover:opacity-80"
+              >
+                Configure Key
+              </button>
+            </div>
+          )}
+
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d8dee4] pt-4 dark:border-[#444c56]">
+            {/* Clean Autocomplete / Autofill button */}
+            <button
+              type="button"
+              onClick={handleAutofill}
+              disabled={isAutofilling}
+              className="inline-flex items-center gap-1.5 rounded-md border border-[#0969da]/30 bg-[#ddf4ff] px-3 py-2 text-xs font-semibold text-[#0969da] transition hover:bg-[#b6e3ff] focus:outline-none focus:ring-2 focus:ring-[#0969da] disabled:opacity-50 dark:border-[#539bf5]/40 dark:bg-[#1f3b53] dark:text-[#539bf5] dark:hover:bg-[#294c6b]"
+              title="Autofill program details using Muse Spark"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {isAutofilling ? "Autofilling details..." : "⚡ Autofill with Muse Spark"}
             </button>
+
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={onCancel} className="rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-semibold text-[#24292f] transition hover:bg-[#f6f8fa] focus:outline-none focus:ring-2 focus:ring-[#0969da] dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#adbac7] dark:hover:bg-[#373e47]">Cancel</button>
+              <button type="submit" disabled={isPending} className="inline-flex items-center gap-2 rounded-md bg-[#0969da] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#0860ca] focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#539bf5] dark:text-[#0d1117] dark:hover:bg-[#6cb6ff]">
+                {isPending && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white dark:border-[#0d1117]/30 dark:border-t-[#0d1117]" />}
+                {isPending ? "Saving..." : editingApp ? "Save changes" : "Add program"}
+              </button>
+            </div>
           </footer>
         </form>
       </section>
@@ -367,6 +512,7 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingApp, setEditingApp] = useState<Application | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeApplication, setActiveApplication] = useState<Application | null>(null);
   const [activeModal, setActiveModal] = useState<ModalName>(null);
   const [materialsByApp, setMaterialsByApp] = useState<Record<string, MaterialItem[]>>({});
@@ -377,191 +523,137 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
   const [isGithubSynced, setIsGithubSynced] = useState(false);
 
   useEffect(() => {
-    const nextMaterials: Record<string, MaterialItem[]> = {};
-    const nextLors: Record<string, LORRequest[]> = {};
-    const nextHistory: Record<string, ActionLogEntry[]> = {};
+    let isMounted = true;
 
-    for (const application of applications) {
-      const richApplication = application as RichApplication;
-      const storedMaterials = readStored<MaterialItem>(STORAGE_PREFIXES.materials, application.id);
-      const storedLors = readStored<LORRequest>(STORAGE_PREFIXES.lors, application.id);
-      const storedHistory = readStored<ActionLogEntry>(STORAGE_PREFIXES.history, application.id);
-      if (storedMaterials) nextMaterials[application.id] = normalizeMaterials(storedMaterials);
-      if (storedLors) nextLors[application.id] = normalizeRequests(storedLors);
-      if (storedHistory) nextHistory[application.id] = normalizeHistory(storedHistory);
-      if (!storedMaterials && richApplication.materials) nextMaterials[application.id] = normalizeMaterials(richApplication.materials);
-      if (!storedLors && richApplication.lorRequests) nextLors[application.id] = normalizeRequests(richApplication.lorRequests);
-      if (!storedHistory && richApplication.actionLog) nextHistory[application.id] = normalizeHistory(richApplication.actionLog);
+    async function loadHydration() {
+      const syncResult = await syncApplicationsWithResult();
+      if (!isMounted) return;
+
+      if (syncResult.applications.length > 0) {
+        setApplications(syncResult.applications);
+      }
+      setIsGithubSynced(syncResult.source === "github");
+
+      if (typeof window !== "undefined") {
+        const nextMaterials: Record<string, MaterialItem[]> = {};
+        const nextLors: Record<string, LORRequest[]> = {};
+        const nextHistory: Record<string, ActionLogEntry[]> = {};
+
+        syncResult.applications.forEach((app) => {
+          try {
+            const rawMat = localStorage.getItem(`${STORAGE_PREFIXES.materials}${app.id}`);
+            if (rawMat) nextMaterials[app.id] = normalizeMaterials(JSON.parse(rawMat));
+
+            const rawLor = localStorage.getItem(`${STORAGE_PREFIXES.lors}${app.id}`);
+            if (rawLor) nextLors[app.id] = normalizeRequests(JSON.parse(rawLor));
+
+            const rawHist = localStorage.getItem(`${STORAGE_PREFIXES.history}${app.id}`);
+            if (rawHist) nextHistory[app.id] = normalizeHistory(JSON.parse(rawHist));
+          } catch {
+            // Ignore parse errors
+          }
+        });
+
+        setMaterialsByApp(nextMaterials);
+        setLorsByApp(nextLors);
+        setHistoryByApp(nextHistory);
+      }
     }
 
-    setMaterialsByApp(nextMaterials);
-    setLorsByApp(nextLors);
-    setHistoryByApp(nextHistory);
-  }, [applications]);
-  useEffect(() => {
-    if (initialApplications.length > 0) return;
+    loadHydration();
 
-    let cancelled = false;
-    const hydrateApplications = async () => {
-      try {
-        const result = await syncApplicationsWithResult();
-        if (cancelled) return;
-        setApplications(result.applications);
-        setIsGithubSynced(result.remoteAvailable);
-      } catch {
-        if (!cancelled) setNotice("No synced applications yet. Add a program to begin.");
-      }
-    };
-
-    void hydrateApplications();
     return () => {
-      cancelled = true;
+      isMounted = false;
     };
-  }, [initialApplications.length]);
+  }, []);
 
-  useEffect(() => {
-    if (!notice) return;
-    const timeout = window.setTimeout(() => setNotice(null), 3600);
-    return () => window.clearTimeout(timeout);
-  }, [notice]);
+  const stats = useMemo(() => {
+    const total = applications.length;
+    const active = applications.filter(
+      (app) => app.status === "In Progress" || app.status === "Interview Offered"
+    ).length;
+    const submitted = applications.filter((app) => app.status === "Submitted").length;
+    const materials = Object.values(materialsByApp).reduce(
+      (sum, items) => sum + items.length,
+      0
+    );
 
-  const richApplication = (application: Application) => application as RichApplication;
-
-  const materialsFor = (application: Application) => {
-    const stored = materialsByApp[application.id];
-    if (stored) return stored;
-    return normalizeMaterials(richApplication(application).materials);
-  };
-
-  const lorsFor = (application: Application) => {
-    const stored = lorsByApp[application.id];
-    if (stored) return stored;
-    return normalizeRequests(richApplication(application).lorRequests);
-  };
-
-  const historyFor = (application: Application) => {
-    const stored = historyByApp[application.id];
-    if (stored) return stored;
-    return normalizeHistory(richApplication(application).actionLog);
-  };
-
-  const appendHistory = (application: Application, action: string, description: string) => {
-    const entry: ActionLogEntry = {
-      id: createId("action"),
-      action,
-      description,
-      timestamp: new Date().toISOString(),
-    };
-    const currentEntries = historyByApp[application.id] ?? historyFor(application);
-    const nextEntries = [entry, ...currentEntries].slice(0, 100);
-    setHistoryByApp((current) => ({ ...current, [application.id]: nextEntries }));
-    writeStored(STORAGE_PREFIXES.history, application.id, nextEntries);
-    void appendActionLog(application.id, entry as never).catch(() => {
-      setNotice("Saved locally; action history will sync when the backend is available.");
-    });
-  };
-
-  const openModal = (application: Application, modal: Exclude<ModalName, null>) => {
-    setActiveApplication(application);
-    setActiveModal(modal);
-  };
-
-  const closeModal = () => {
-    setActiveModal(null);
-    setActiveApplication(null);
-  };
+    return { total, active, submitted, materials };
+  }, [applications, materialsByApp]);
 
   const filteredApps = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return applications.filter((application) => {
-      const visibleStatus = statusLabel(application.status);
-      const matchesStatus = filterStatus === "ALL" || visibleStatus === filterStatus;
-      if (!matchesStatus) return false;
-      if (!query) return true;
-      return [application.programName, application.university, application.degreeType, application.status, visibleStatus]
-        .filter((value): value is string => Boolean(value))
-        .some((value) => value.toLowerCase().includes(query));
+    return applications.filter((app) => {
+      const matchesStatus =
+        filterStatus === "ALL"
+          ? true
+          : statusLabel(app.status) === filterStatus || app.status === filterStatus;
+
+      const matchesSearch =
+        !query ||
+        app.programName.toLowerCase().includes(query) ||
+        app.university.toLowerCase().includes(query) ||
+        app.status.toLowerCase().includes(query) ||
+        app.degreeType.toLowerCase().includes(query);
+
+      return matchesStatus && matchesSearch;
     });
   }, [applications, filterStatus, searchQuery]);
-
-  const stats = useMemo(() => {
-    const active = applications.filter((application) => {
-      const status = workflowStatus(application.status);
-      return status !== "Decision" && application.status !== "Rejected";
-    }).length;
-    const submitted = applications.filter((application) => {
-      const status = workflowStatus(application.status);
-      return status === "Submitted" || status === "Interview";
-    }).length;
-    const materials = applications.reduce((total, application) => total + materialsFor(application).length, 0);
-    return {
-      total: applications.length,
-      active,
-      submitted,
-      materials,
-    };
-  }, [applications, materialsByApp]);
 
   const handleOpenAdd = () => {
     setEditingApp(null);
     setIsEditorOpen(true);
   };
 
-  const handleOpenEdit = (application: Application) => {
-    setEditingApp(application);
+  const handleOpenEdit = (app: Application) => {
+    setEditingApp(app);
     setIsEditorOpen(true);
   };
-  const handleApplicationSubmit = async (formData: FormData) => {
-    const id = String(formData.get("id") || createId("application"));
-    const nextApplication = {
-      ...(editingApp ?? {}),
-      id,
-      programName: String(formData.get("programName") || ""),
-      university: String(formData.get("university") || ""),
-      deadline: String(formData.get("deadline") || ""),
-      status: String(formData.get("status") || "Researching") as ApplicationStatus,
-      degreeType: String(formData.get("degreeType") || "MS / SMP"),
-      gpaRequirement: String(formData.get("gpaRequirement") || ""),
-      mcatRequirement: String(formData.get("mcatRequirement") || ""),
-      appFee: String(formData.get("appFee") || ""),
-      transcriptsSent: formData.get("transcriptsSent") === "on",
-      lorsRequested: formData.get("lorsRequested") === "on",
-      essayCompleted: formData.get("essayCompleted") === "on",
-      portalUrl: String(formData.get("portalUrl") || ""),
-      notes: String(formData.get("notes") || ""),
-      updatedAt: new Date().toISOString(),
-    } as Application;
-    setPendingAction("application");
-    try {
-      const savedApplication = await saveApplication(nextApplication);
-      setApplications((current) => editingApp
-        ? current.map((application) => application.id === id ? savedApplication : application)
-        : [savedApplication, ...current]);
-      appendHistory(savedApplication, editingApp ? "Program updated" : "Program added", `${savedApplication.programName} · ${savedApplication.university}`);
-      setIsEditorOpen(false);
-      setEditingApp(null);
-      setNotice(editingApp ? "Program updated." : "Program added.");
-    } catch {
-      setNotice("The program could not be saved. Your existing data is unchanged.");
-    } finally {
-      setPendingAction(null);
-    }
+
+  const showNotice = (message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice(null), 3000);
   };
 
-  const handleDelete = async (id: string) => {
-    const application = applications.find((item) => item.id === id);
-    if (!application || !window.confirm(`Delete ${application.programName}?`)) return;
-    setPendingAction(`delete:${id}`);
+  const handleApplicationSubmit = async (formData: FormData) => {
+    setPendingAction("application");
     try {
-      const deleted = await deleteApplication(id);
-      if (!deleted) {
-        setNotice("The program could not be deleted.");
-        return;
-      }
-      setApplications((current) => current.filter((item) => item.id !== id));
-      setNotice("Program deleted.");
-    } catch {
-      setNotice("The program could not be deleted.");
+      const isEdit = Boolean(formData.get("id"));
+      const appId = isEdit ? String(formData.get("id")) : `smp-${Date.now()}`;
+
+      const updated: Application = {
+        id: appId,
+        programName: String(formData.get("programName") || "").trim(),
+        university: String(formData.get("university") || "").trim(),
+        status: (formData.get("status") || "Researching") as ApplicationStatus,
+        deadline: String(formData.get("deadline") || "").trim(),
+        degreeType: String(formData.get("degreeType") || "MS / SMP").trim(),
+        gpaRequirement: String(formData.get("gpaRequirement") || "").trim(),
+        mcatRequirement: String(formData.get("mcatRequirement") || "").trim(),
+        appFee: String(formData.get("appFee") || "").trim(),
+        portalUrl: String(formData.get("portalUrl") || "").trim(),
+        transcriptsSent: formData.get("transcriptsSent") === "on",
+        lorsRequested: formData.get("lorsRequested") === "on",
+        essayCompleted: formData.get("essayCompleted") === "on",
+        notes: String(formData.get("notes") || "").trim(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await saveApplication(updated);
+
+      setApplications((prev) => {
+        const idx = prev.findIndex((a) => a.id === appId);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = updated;
+          return next;
+        }
+        return [updated, ...prev];
+      });
+
+      setIsEditorOpen(false);
+      setEditingApp(null);
+      showNotice(isEdit ? "Program updated" : "Program added to pipeline");
     } finally {
       setPendingAction(null);
     }
@@ -569,64 +661,97 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
 
   const handleAdvanceStatus = async (application: Application) => {
     const next = nextWorkflowStatus(application.status);
-    if (!next) {
-      setNotice("This application is at the end of the pipeline.");
-      return;
-    }
-    const nextApplication = {
-      ...application,
-      status: persistedStatus(next),
-      updatedAt: new Date().toISOString(),
-    };
+    if (!next) return;
+
     setPendingAction(`advance:${application.id}`);
-    setApplications((current) => current.map((item) => item.id === application.id ? nextApplication : item));
     try {
-      await updateApplicationStatus(application.id, nextApplication.status);
-      setNotice(`Moved to ${next}.`);
-    } catch {
-      setNotice(`Moved to ${next} locally; sync will retry when the backend is available.`);
+      const newStatus = persistedStatus(next);
+      await updateApplicationStatus(application.id, newStatus);
+
+      setApplications((prev) =>
+        prev.map((app) =>
+          app.id === application.id
+            ? { ...app, status: newStatus, updatedAt: new Date().toISOString() }
+            : app
+        )
+      );
+
+      showNotice(`Advanced to ${next}`);
     } finally {
       setPendingAction(null);
     }
   };
 
-  const handleMaterialsSave = async (materials: MaterialItem[]) => {
-    if (!activeApplication) return;
-    const application = activeApplication;
-    setMaterialsByApp((current) => ({ ...current, [application.id]: materials }));
-    setApplications((current) => current.map((item) => item.id === application.id
-      ? ({ ...item, transcriptsSent: materials.some((material) => material.type === "Transcript"), essayCompleted: materials.some((material) => material.type === "Personal Statement" || material.type === "Essay Draft"), updatedAt: new Date().toISOString() } as Application)
-      : item));
-    writeStored(STORAGE_PREFIXES.materials, application.id, materials);
-    appendHistory(application, "Materials updated", `${materials.length} saved ${materials.length === 1 ? "item" : "items"}`);
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this program?")) return;
+    setPendingAction(`delete:${id}`);
     try {
-      await updateMaterials(application.id, materials as never);
-    } catch {
-      setNotice("Materials saved locally; sync will retry when the backend is available.");
+      await deleteApplication(id);
+      setApplications((prev) => prev.filter((a) => a.id !== id));
+      showNotice("Program removed");
+    } finally {
+      setPendingAction(null);
     }
   };
 
-  const handleLORSave = async (requests: LORRequest[]) => {
-    if (!activeApplication) return;
-    const application = activeApplication;
-    setLorsByApp((current) => ({ ...current, [application.id]: requests }));
-    setApplications((current) => current.map((item) => item.id === application.id
-      ? ({ ...item, lorsRequested: requests.some((request) => request.status !== "Not requested"), updatedAt: new Date().toISOString() } as Application)
-      : item));
-    writeStored(STORAGE_PREFIXES.lors, application.id, requests);
-    appendHistory(application, "LORs updated", `${requests.length} ${requests.length === 1 ? "request" : "requests"} tracked`);
-    try {
-      await updateLORRequests(application.id, requests as never);
-    } catch {
-      setNotice("LORs saved locally; sync will retry when the backend is available.");
-    }
+  const openModal = (app: Application, modal: ModalName) => {
+    setActiveApplication(app);
+    setActiveModal(modal);
   };
 
+  const closeModal = () => {
+    setActiveApplication(null);
+    setActiveModal(null);
+  };
 
+  const materialsFor = (app: Application) => materialsByApp[app.id] || [];
+  const lorsFor = (app: Application) => lorsByApp[app.id] || [];
+  const historyFor = (app: Application) => historyByApp[app.id] || [];
+
+  const handleMaterialsSave = (items: MaterialItem[]) => {
+    if (!activeApplication) return;
+    const appId = activeApplication.id;
+    setMaterialsByApp((prev) => ({ ...prev, [appId]: items }));
+    const payload = items.map((item) => ({
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      status: item.status,
+      source: item.source,
+      fileName: item.fileName || "",
+      url: item.url || "",
+      notes: item.notes || "",
+      submittedAt: item.status === "Submitted" ? new Date().toISOString() : "",
+      updatedAt: item.updatedAt || new Date().toISOString(),
+    }));
+    updateMaterials(appId, payload);
+  };
+
+  const handleLORSave = (items: LORRequest[]) => {
+    if (!activeApplication) return;
+    const appId = activeApplication.id;
+    setLorsByApp((prev) => ({ ...prev, [appId]: items }));
+    const payload = items.map((item) => ({
+      id: item.id,
+      recommenderName: item.recommenderName,
+      institution: item.institution || "",
+      relationship: item.relationship || "",
+      letterType: item.letterType || "",
+      status: item.status,
+      email: item.email || "",
+      submissionDate: item.submissionDate || "",
+      waivedRights: Boolean(item.waivedRights),
+      confirmedReceipt: Boolean(item.confirmedReceipt),
+      notes: item.notes || "",
+      updatedAt: item.updatedAt || new Date().toISOString(),
+    }));
+    updateLORRequests(appId, payload);
+  };
   const handleHistoryClear = () => {
     if (!activeApplication) return;
-    setHistoryByApp((current) => ({ ...current, [activeApplication.id]: [] }));
-    writeStored(STORAGE_PREFIXES.history, activeApplication.id, []);
+    const appId = activeApplication.id;
+    setHistoryByApp((prev) => ({ ...prev, [appId]: [] }));
+    localStorage.removeItem(`${STORAGE_PREFIXES.history}${appId}`);
   };
 
   return (
@@ -635,14 +760,43 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
         <header className="flex flex-col gap-5 border-b border-[#d8dee4] pb-6 dark:border-[#444c56] md:flex-row md:items-end md:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">SMP application tracker</h1>
-              <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold ${isGithubSynced || source === "google_sheets" ? "border-[#1f883d]/30 bg-[#dafbe1] text-[#1f883d] dark:border-[#46954a]/40 dark:bg-[#1f3b2b] dark:text-[#56d364]" : "border-[#d0d7de] bg-[#f6f8fa] text-[#57606a] dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#768390]"}`}>
-                <Database className="h-3.5 w-3.5" />{isGithubSynced ? "GitHub synced" : source === "google_sheets" ? "Google Sheets connected" : "Local storage"}
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+                Special Master&apos;s Programs Tracker
+              </h1>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                  isGithubSynced || source === "google_sheets"
+                    ? "border-[#1f883d]/30 bg-[#dafbe1] text-[#1f883d] dark:border-[#46954a]/40 dark:bg-[#1f3b2b] dark:text-[#56d364]"
+                    : "border-[#d0d7de] bg-[#f6f8fa] text-[#57606a] dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#768390]"
+                }`}
+              >
+                <Database className="h-3.5 w-3.5" />
+                {isGithubSynced ? "GitHub synced" : source === "google_sheets" ? "Google Sheets connected" : "Local storage"}
               </span>
             </div>
-            <p className="mt-2 max-w-2xl text-sm text-[#57606a] dark:text-[#768390]">Track deadlines, materials, recommendations, and decisions without losing the details between applications.</p>
+            <p className="mt-2 max-w-2xl text-sm text-[#57606a] dark:text-[#768390]">
+              Track deadlines, materials, recommendations, and decisions with Muse Spark autocomplete.
+            </p>
           </div>
-          <button type="button" onClick={handleOpenAdd} className="inline-flex items-center justify-center gap-2 self-start rounded-md bg-[#0969da] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0860ca] focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:ring-offset-2 dark:bg-[#539bf5] dark:text-[#0d1117] dark:hover:bg-[#6cb6ff] md:self-auto"><Plus className="h-4 w-4" />Add program</button>
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[#d0d7de] bg-white px-3 py-2 text-sm font-semibold text-[#57606a] transition hover:bg-[#f6f8fa] hover:text-[#24292f] focus:outline-none focus:ring-2 focus:ring-[#0969da] dark:border-[#444c56] dark:bg-[#22272e] dark:text-[#adbac7] dark:hover:bg-[#2d333b]"
+              title="Configure Muse Spark API key"
+            >
+              <Key className="h-4 w-4" />
+              API Key
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenAdd}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#0969da] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#0860ca] focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:ring-offset-2 dark:bg-[#539bf5] dark:text-[#0d1117] dark:hover:bg-[#6cb6ff]"
+            >
+              <Plus className="h-4 w-4" />
+              Add program
+            </button>
+          </div>
         </header>
 
         <section aria-label="Application metrics" className="grid grid-cols-2 border-b border-[#d8dee4] dark:border-[#444c56] sm:grid-cols-4">
@@ -720,7 +874,21 @@ export function TrackerDashboard({ initialApplications, source }: Props) {
         {notice && <div role="status" className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-md border border-[#d0d7de] bg-white px-4 py-3 text-sm font-medium text-[#24292f] shadow-lg dark:border-[#444c56] dark:bg-[#2d333b] dark:text-[#adbac7]">{notice}</div>}
       </div>
 
-      {isEditorOpen && <ApplicationEditor editingApp={editingApp} isPending={pendingAction === "application"} onCancel={() => { setIsEditorOpen(false); setEditingApp(null); }} onSubmit={handleApplicationSubmit} />}
+      {isEditorOpen && (
+        <ApplicationEditor
+          editingApp={editingApp}
+          isPending={pendingAction === "application"}
+          onCancel={() => { setIsEditorOpen(false); setEditingApp(null); }}
+          onSubmit={handleApplicationSubmit}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+        />
+      )}
+      {isSettingsOpen && (
+        <ApiKeySettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+        />
+      )}
       {activeApplication && activeModal === "materials" && <MaterialsModal isOpen applicationId={activeApplication.id} programName={activeApplication.programName} initialMaterials={materialsFor(activeApplication)} onClose={closeModal} onSave={handleMaterialsSave} />}
       {activeApplication && activeModal === "lors" && <LORModal isOpen applicationId={activeApplication.id} programName={activeApplication.programName} initialRequests={lorsFor(activeApplication)} onClose={closeModal} onSave={handleLORSave} />}
       {activeApplication && activeModal === "history" && <ActionHistoryModal isOpen applicationId={activeApplication.id} programName={activeApplication.programName} initialEntries={historyFor(activeApplication)} onClose={closeModal} onClear={handleHistoryClear} />}
